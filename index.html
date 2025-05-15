@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced 3D Slider</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+        canvas { 
+            display: block; 
+            opacity: 0;
+            transition: opacity 1.5s ease-out;
+        }
+        .loading { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: #000; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            color: white; 
+            font-family: 'Arial', sans-serif; 
+            z-index: 100;
+            transition: opacity 0.8s ease-out;
+        }
+        .loading-text {
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, #fff, #aaa, #fff);
+            background-size: 200% auto;
+            color: transparent;
+            -webkit-background-clip: text;
+            background-clip: text;
+            animation: shine 3s linear infinite;
+        }
+        .loading::after {
+            content: "";
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255,255,255,0.2);
+            border-radius: 50%;
+            border-top-color: white;
+            border-bottom-color: #00ffff;
+            animation: spin 1s linear infinite;
+            margin-left: 15px;
+        }
+        .nav-dots {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            z-index: 10;
+        }
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 5px rgba(0,255,255,0.5);
+        }
+        .dot.active {
+            background: white;
+            transform: scale(1.3);
+            box-shadow: 0 0 10px cyan;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes shine {
+            to { background-position: 200% center; }
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <div class="loading-text">Loading Experience</div>
+    </div>
+    <div class="nav-dots"></div>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.11.4/dist/gsap.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const loadingScreen = document.querySelector('.loading');
+            const navDots = document.querySelector('.nav-dots');
+            
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050505);
+            
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 10;
+            
+            const renderer = new THREE.WebGLRenderer({ 
+                antialias: true, 
+                alpha: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+            
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(0, 1, 1);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            const pointLight = new THREE.PointLight(0x00ffff, 1, 20);
+            pointLight.position.set(2, 3, 4);
+            scene.add(pointLight);
+            
+            const pointLight2 = new THREE.PointLight(0xff00ff, 1, 20);
+            pointLight2.position.set(-2, -3, -4);
+            scene.add(pointLight2);
+            
+            const textureUrls = [
+                'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&h=600&fit=crop',
+                'https://images.unsplash.com/photo-1452421822248-d4c2b47f0c81?w=800&h=600&fit=crop',
+                'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800&h=600&fit=crop',
+                'https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?w=800&h=600&fit=crop',
+                'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=800&h=600&fit=crop'
+            ];
+            
+            const textureLoader = new THREE.TextureLoader();
+            const loadTextures = textureUrls.map(url => new Promise(resolve => {
+                textureLoader.load(url, texture => {
+                    texture.colorSpace = THREE.SRGBColorSpace;
+                    resolve(texture);
+                }, undefined, reject => {
+                    console.error('Failed to load texture:', url);
+                    resolve(new THREE.MeshStandardMaterial({ color: 0x888888 }));
+                });
+            }));
+            
+            Promise.all(loadTextures).then(textures => {
+                loadingScreen.style.opacity = '0';
+                setTimeout(() => {
+                    loadingScreen.style.display = 'none';
+                    document.querySelector('canvas').style.opacity = '1';
+                }, 800);
+                
+                const slider = new THREE.Group();
+                scene.add(slider);
+                
+                const meshes = [];
+                const geometry = new THREE.BoxGeometry(3.5, 2.5, 0.2);
+                geometry.computeVertexNormals();
+                
+                const materials = textures.map(texture => {
+                    if (texture.isMaterial) return texture;
+                    return new THREE.MeshStandardMaterial({ 
+                        map: texture,
+                        roughness: 0.2,
+                        metalness: 0.3,
+                        emissive: 0x000000,
+                        emissiveIntensity: 0.1
+                    });
+                });
+                
+                textures.forEach((texture, i) => {
+                    const mesh = new THREE.Mesh(geometry, materials[i]);
+                    mesh.position.x = (i - Math.floor(textures.length / 2)) * 4.5;
+                    mesh.userData.index = i;
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    
+                    const edges = new THREE.EdgesGeometry(geometry);
+                    const line = new THREE.LineSegments(
+                        edges, 
+                        new THREE.LineBasicMaterial({ 
+                            color: 0x00ffff, 
+                            linewidth: 2,
+                            transparent: true,
+                            opacity: 0.7
+                        })
+                    );
+                    mesh.add(line);
+                    
+                    slider.add(mesh);
+                    meshes.push(mesh);
+                    
+                    const dot = document.createElement('div');
+                    dot.className = 'dot';
+                    dot.dataset.index = i;
+                    navDots.appendChild(dot);
+                    
+                    dot.addEventListener('click', () => {
+                        if (isAnimating) return;
+                        const targetIndex = parseInt(dot.dataset.index);
+                        targetPosition = -targetIndex * 4.5;
+                        
+                        gsap.to(slider.position, {
+                            x: targetPosition,
+                            duration: 1.2,
+                            ease: "elastic.out(1, 0.5)",
+                            onStart: () => isAnimating = true,
+                            onComplete: () => isAnimating = false
+                        });
+                        
+                        updateDots(targetIndex);
+                    });
+                });
+                
+                function updateDots(activeIndex) {
+                    document.querySelectorAll('.dot').forEach((dot, i) => {
+                        dot.classList.toggle('active', i === activeIndex);
+                    });
+                }
+                
+                updateDots(Math.floor(textures.length / 2));
+                
+                let targetPosition = 0;
+                let isAnimating = false;
+                let isMaximized = false;
+                let isDragging = false;
+                let lastMouseX = 0;
+                let mouseX = 0;
+                let scrollVelocity = 0;
+                let autoRotateTimeout;
+                let currentCenter = null;
+                
+                const handleClick = (event) => {
+                    if (isDragging || isAnimating) return;
+                    
+                    mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+                    const raycaster = new THREE.Raycaster();
+                    raycaster.setFromCamera({ x: mouseX, y: 0 }, camera);
+                    
+                    const intersects = raycaster.intersectObjects(meshes);
+                    if (intersects.length > 0) {
+                        const clickedMesh = intersects[0].object;
+                        currentCenter = clickedMesh;
+                        
+                        isMaximized = !isMaximized;
+                        isAnimating = true;
+                        
+                        meshes.forEach((m) => {
+                            const isSelected = clickedMesh === m;
+                            const targetZ = isSelected ? (isMaximized ? -3 : 0) : 0;
+                            const targetY = isSelected ? (isMaximized ? 0.8 : 0) : 0;
+                            
+                            gsap.to(m.position, { 
+                                z: targetZ, 
+                                y: targetY,
+                                duration: 1,
+                                ease: "back.out(1.7)"
+                            });
+                            
+                            gsap.to(m.rotation, {
+                                y: isSelected ? (isMaximized ? Math.PI * 0.1 : 0) : 0,
+                                x: isSelected ? (isMaximized ? Math.PI * 0.02 : 0) : 0,
+                                duration: 1.2,
+                                ease: "elastic.out(1, 0.5)"
+                            });
+                            
+                            gsap.to(m.scale, {
+                                x: isSelected ? (isMaximized ? 1.3 : 1) : 1,
+                                y: isSelected ? (isMaximized ? 1.3 : 1) : 1,
+                                duration: 0.8,
+                                ease: "back.out(2)"
+                            });
+                            
+                            if (m.children[0]) {
+                                gsap.to(m.children[0].material, {
+                                    opacity: isSelected ? (isMaximized ? 1 : 0.7) : 0.7,
+                                    duration: 0.5
+                                });
+                            }
+                        });
+                        
+                        gsap.to(camera.position, {
+                            z: isMaximized ? 7 : 10,
+                            duration: 1,
+                            ease: "power2.out",
+                            onComplete: () => isAnimating = false
+                        });
+                        
+                        gsap.to(pointLight, {
+                            intensity: isMaximized ? 0.5 : 1,
+                            duration: 0.8
+                        });
+                        
+                        gsap.to(pointLight2, {
+                            intensity: isMaximized ? 0.5 : 1,
+                            duration: 0.8
+                        });
+                        
+                        navDots.style.opacity = isMaximized ? '0' : '1';
+                        gsap.to(navDots, {
+                            y: isMaximized ? 20 : 0,
+                            duration: 0.5,
+                            ease: "power2.out"
+                        });
+                    }
+                };
+                
+                const startDrag = (event) => {
+                    isDragging = true;
+                    lastMouseX = event.clientX;
+                    clearTimeout(autoRotateTimeout);
+                    
+                    meshes.forEach(mesh => {
+                        gsap.to(mesh.rotation, {
+                            y: 0,
+                            x: 0,
+                            duration: 0.3
+                        });
+                    });
+                };
+                
+                const onDrag = (event) => {
+                    if (!isDragging) return;
+                    
+                    const deltaX = event.clientX - lastMouseX;
+                    slider.position.x += deltaX * 0.008;
+                    lastMouseX = event.clientX;
+                    scrollVelocity = deltaX * 0.1;
+                    
+                    meshes.forEach(mesh => {
+                        const distanceFromCenter = Math.abs(mesh.position.x + slider.position.x);
+                        const rotationAmount = Math.min(0.2, 0.2 - (distanceFromCenter * 0.05));
+                        mesh.rotation.y = (mesh.position.x + slider.position.x) * -0.02;
+                        mesh.rotation.x = rotationAmount * Math.sin(Date.now() * 0.005);
+                    });
+                };
+                
+                const endDrag = () => {
+                    if (!isDragging) return;
+                    isDragging = false;
+                    
+                    const centerIndex = Math.round(-slider.position.x / 4.5);
+                    targetPosition = centerIndex * 4.5;
+                    
+                    gsap.to(slider.position, {
+                        x: targetPosition,
+                        duration: 1,
+                        ease: "elastic.out(1, 0.5)",
+                        onStart: () => isAnimating = true,
+                        onComplete: () => {
+                            isAnimating = false;
+                            updateDots(centerIndex);
+                            
+                            if (!isDragging && !isMaximized) {
+                                autoRotateTimeout = setTimeout(() => {
+                                    if (!isDragging && !isMaximized) {
+                                        meshes.forEach(mesh => {
+                                            gsap.to(mesh.rotation, {
+                                                y: Math.random() * 0.2 - 0.1,
+                                                x: Math.random() * 0.1 - 0.05,
+                                                duration: 3,
+                                                ease: "sine.inOut"
+                                            });
+                                        });
+                                    }
+                                }, 3000);
+                            }
+                        }
+                    });
+                };
+                
+                const onScroll = (event) => {
+                    if (isAnimating || isMaximized) return;
+                    scrollVelocity += event.deltaY * 0.01;
+                };
+                
+                const handleTouchStart = (event) => {
+                    startDrag({ clientX: event.touches[0].clientX });
+                };
+                
+                const handleTouchMove = (event) => {
+                    onDrag({ clientX: event.touches[0].clientX });
+                };
+                
+                const handleTouchEnd = () => {
+                    endDrag();
+                };
+                
+                window.addEventListener('click', handleClick);
+                window.addEventListener('mousedown', startDrag);
+                window.addEventListener('mousemove', onDrag);
+                window.addEventListener('mouseup', endDrag);
+                window.addEventListener('wheel', onScroll);
+                window.addEventListener('touchstart', handleTouchStart);
+                window.addEventListener('touchmove', handleTouchMove);
+                window.addEventListener('touchend', handleTouchEnd);
+                
+                const handleResize = () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                };
+                window.addEventListener('resize', handleResize);
+                
+                const particlesGeometry = new THREE.BufferGeometry();
+                const particlesCount = 500;
+                const posArray = new Float32Array(particlesCount * 3);
+                
+                for(let i = 0; i < particlesCount * 3; i++) {
+                    posArray[i] = (Math.random() - 0.5) * 20;
+                }
+                
+                particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+                const particlesMaterial = new THREE.PointsMaterial({
+                    size: 0.02,
+                    color: 0x00ffff,
+                    transparent: true,
+                    opacity: 0.8,
+                    blending: THREE.AdditiveBlending
+                });
+                const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+                scene.add(particlesMesh);
+                
+                const animate = () => {
+                    requestAnimationFrame(animate);
+                    
+                    if (!isDragging && !isAnimating && Math.abs(scrollVelocity) > 0.001) {
+                        slider.position.x += scrollVelocity;
+                        scrollVelocity *= 0.92;
+                        
+                        const maxOffset = (meshes.length - 1) * 2.25;
+                        if (slider.position.x > maxOffset) {
+                            slider.position.x = maxOffset;
+                            scrollVelocity = 0;
+                        } else if (slider.position.x < -maxOffset) {
+                            slider.position.x = -maxOffset;
+                            scrollVelocity = 0;
+                        }
+                    }
+                    
+                    if (!isMaximized && !isAnimating && !isDragging) {
+                        meshes.forEach(mesh => {
+                            mesh.rotation.x = Math.sin(Date.now() * 0.001) * 0.03;
+                            mesh.rotation.z = Math.cos(Date.now() * 0.0007) * 0.02;
+                        });
+                    }
+                    
+                    particlesMesh.rotation.x += 0.0002;
+                    particlesMesh.rotation.y += 0.0003;
+                    
+                    pointLight.position.x = Math.sin(Date.now() * 0.001) * 3;
+                    pointLight.position.y = Math.cos(Date.now() * 0.0015) * 2;
+                    
+                    pointLight2.position.x = Math.cos(Date.now() * 0.0012) * 3;
+                    pointLight2.position.y = Math.sin(Date.now() * 0.0017) * 2;
+                    
+                    renderer.render(scene, camera);
+                };
+                
+                animate();
+            }).catch(error => {
+                console.error('Error loading textures:', error);
+                loadingScreen.textContent = 'Failed to load images. Please refresh.';
+                loadingScreen.style.animation = 'none';
+            });
+        });
+    </script>
+</body>
+</html>
